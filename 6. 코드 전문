@@ -1,0 +1,453 @@
+#include <iostream>
+#include <mariadb/conncpp.hpp>
+#include <string>
+#include <vector>
+using namespace std;
+
+class DB
+{
+private:
+    string DB_ID;
+    string DB_PW;
+public:
+    DB() {}
+    sql::Connection* CONN;
+    void setting(string& id, string& pw)
+    {
+        DB_ID = id;
+        DB_PW = pw;
+    }
+    void connect()
+    {
+        try
+        {
+            sql::Driver* driver = sql::mariadb::get_driver_instance();
+            sql::SQLString url = "jdbc:mariadb://10.10.21.119/DBZA";    // db의 주소
+            sql::Properties properties({{"user", DB_ID}, {"password", DB_PW}});     // 로그인
+            CONN = driver->connect(url, properties);
+            cout << "Connect\n";
+        }
+        catch(sql::SQLException& e)
+        {
+            cerr << "DB 접속 실패: " << e.what() << endl;
+            exit(1);
+        }
+    }
+    sql::ResultSet* executeQuery(const string& query)
+    {
+        sql::Statement* stmnt(CONN->createStatement());
+        sql::ResultSet* res = stmnt->executeQuery(query);
+        return res;
+    }
+    ~DB() {}
+};
+
+class CalCulate
+{
+private:
+    DB& mDB;
+public:
+    CalCulate(DB& db) : mDB(db) {}
+    void showColumn(const string& table)
+    {
+        try
+        {
+            int i = 0;
+            string query = "SHOW COLUMNS FROM " + table;
+            sql::ResultSet *res = mDB.executeQuery(query);
+            while (res->next())
+            {
+                i++;
+                if (i > 2)
+                {
+                    cout << "- " << res->getString(1);
+                    cout << endl;
+                }
+            }
+        }
+        catch(sql::SQLException& e)
+        {
+            cerr << "입력에러: " << e.what() << endl;
+        }
+    }
+    void max(const string& object, const string& table, const string& list)
+    {
+        try
+        {
+            string query = "SELECT 범죄대분류, 범죄중분류," + object + " FROM " + table + " ORDER BY " + list + " DESC LIMIT 1;";
+            sql::ResultSet *res = mDB.executeQuery(query);
+            while (res->next())
+            {
+                cout << "---------------" << endl;
+                cout << object << " 최대범죄\n";
+                cout << "범죄대분류: " << res->getString(1) << endl;
+                cout << "범죄중분류: " << res->getString(2) << endl;
+                cout << "횟수: " << res->getInt(3) << endl;
+                cout << "---------------" << endl;
+            }
+        }
+        catch(sql::SQLException& e)
+        {
+            std::cerr << "입력에러: " << e.what() << endl;
+        }
+    }
+    void min(const string& object, const string& table, const string& list)
+    {
+        try
+        {
+            string query = "SELECT 범죄대분류, 범죄중분류," + object + " FROM " + table + " ORDER BY " + list + " LIMIT 1;";
+            sql::ResultSet *res = mDB.executeQuery(query);
+            while (res->next())
+            {
+                cout << object << " 최소범죄\n";
+                cout << "범죄대분류: " << res->getString(1) << endl;
+                cout << "범죄중분류: " << res->getString(2) << endl;
+                cout << "횟수: " << res->getInt(3) << endl;
+                cout << "---------------" << endl;
+            }
+        }
+        catch(sql::SQLException& e)
+        {
+            cerr << "입력에러: " << e.what() << endl;
+        }
+    }
+    void avg(const string& object, const string& table)
+    {
+        try
+        {
+            string query = "SELECT 범죄대분류, AVG(" + object + ") FROM " + table + " GROUP BY 범죄대분류;";
+            sql::ResultSet *res = mDB.executeQuery(query);
+            cout << object << " 평균\n";
+            while (res->next())
+            {
+                cout << "범죄대분류: " << res->getString(1) << endl;
+                cout << "횟수: " << res->getInt(2) << endl;
+            }
+            cout << "---------------" << endl;
+        }
+        catch(sql::SQLException& e)
+        {
+            cerr << "입력에러: " << e.what() << endl;
+        }
+    }
+    void addHistory(string title, string object, string table, string list)
+    {
+        try
+        {
+            int i = 1;
+            string query = "SELECT * FROM HISTORY;";
+            sql::ResultSet *res = mDB.executeQuery(query);
+            while (res->next())
+            {
+                i++;
+            }
+            if(i==31)
+            {
+                string clear = "DELETE FROM HISTORY;";
+                sql::ResultSet *res1 = mDB.executeQuery(clear);
+            }
+            string query1 = "SELECT NOW();";
+            string date;
+            sql::ResultSet *res2 = mDB.executeQuery(query1);
+            while (res2->next())
+            {
+                date = res2->getString(1);
+            }
+            string max = "SELECT 범죄대분류, 범죄중분류," + object + " FROM " + table + " ORDER BY " + list + " DESC LIMIT 1;";
+            string min = "SELECT 범죄대분류, 범죄중분류," + object + " FROM " + table + " ORDER BY " + list + " LIMIT 1;";
+            string avg = "SELECT 범죄대분류, AVG(" + object + ") FROM " + table + " GROUP BY 범죄대분류;";
+            string final = "INSERT INTO HISTORY VALUES('" + date + "', '" + max  + "', '" + min + "', '" + avg + "', '" + title + object + " 최대, 최소, 평균');";
+            sql::ResultSet *res3 =mDB.executeQuery(final);
+        }
+        catch(sql::SQLException& e)
+        {
+            std::cerr << "입력에러: " << e.what() << endl;
+        }
+    }
+    void showHistory()
+    {
+        try
+        {
+            int i = 1;
+            string query = "SELECT * FROM HISTORY;";
+            sql::ResultSet *res = mDB.executeQuery(query);
+            while (res->next())
+            {
+                cout << "---------------" << endl;
+                cout << i << ")" << endl;
+                cout << "날짜: " << res->getString(1) << endl;
+                cout << "검색 기록: " << res->getString(5) << endl;
+                i++;
+            }
+            cout << "---------------" << endl;
+            cout << i << ") 종료\n";
+            cout << "---------------" << endl;
+        }
+        catch(sql::SQLException& e) {}
+    }
+    void searchHistory()
+    {
+        try
+        {
+            int i = 1;
+            int choice = 0;
+            string max;
+            string min;
+            string avg;
+            string ask;
+            string query = "SELECT * FROM HISTORY;";
+            cout << "원하는 번호를 입력하시오: ";
+            cin >> choice;
+            sql::ResultSet *res1 = mDB.executeQuery(query);
+            while (res1->next())
+            {
+                if(choice == i)
+                {
+                    max = res1->getString(2);
+                    min = res1->getString(3);
+                    avg = res1->getString(4);
+                    ask = res1->getString(5);
+                }
+                i++;
+            }
+            cout << "---------------" << endl;
+            cout << ask << endl;
+            sql::ResultSet *res2 = mDB.executeQuery(max);
+            while (res2->next())
+            {
+                cout << "---------------" << endl;
+                cout << "최대범죄\n";
+                cout << "범죄대분류: " << res2->getString(1) << endl;
+                cout << "범죄중분류: " << res2->getString(2) << endl;
+                cout << "횟수: " << res2->getInt(3) << endl;
+                cout << "---------------" << endl;
+            }
+            sql::ResultSet *res3 = mDB.executeQuery(min);
+            while (res3->next())
+            {
+                cout << "최소범죄\n";
+                cout << "범죄대분류: " << res3->getString(1) << endl;
+                cout << "범죄중분류: " << res3->getString(2) << endl;
+                cout << "횟수: " << res3->getInt(3) << endl;
+                cout << "---------------" << endl;
+            }
+            sql::ResultSet *res4 = mDB.executeQuery(avg);
+            cout << "평균\n";
+            while (res4->next())
+            {
+                cout << "범죄대분류: " << res4->getString(1) << endl;
+                cout << "횟수: " << res4->getInt(2) << endl;
+            }
+            cout << "---------------\n\n";
+        }
+        catch(sql::SQLException& e) {}
+    }
+};
+
+class Crime
+{
+private:
+    DB& mDB;
+public:
+    Crime(DB& db) : mDB(db) { }
+    void showColumn()
+    {
+        try
+        {
+            string query = "SELECT 범죄중분류 FROM CRIME_TIME_WEEK;";
+            sql::ResultSet *res = mDB.executeQuery(query);
+            while (res->next())
+            {
+                cout << "- " << res->getString(1);
+                cout << endl;
+            }
+        }
+        catch(sql::SQLException& e)
+        {
+            cerr << "입력에러: " << e.what() << endl;
+        }
+    }
+    void showMaxMin(const string& crime, const string& table, int count)
+    {
+        try
+        { 
+            int i = 0;
+            int j = 0;
+            int max;
+            int min;
+            int maxI;
+            int minI;
+            vector <string> list;
+            std::string a;
+            std::string query = "SHOW COLUMNS FROM " + table + ";";
+            sql::ResultSet *res = mDB.executeQuery(query);
+            while (res->next()) {
+                i++;
+                if (i > 2)
+                {
+                    a = res->getString(1);
+                    list.push_back(a);
+                }
+            }
+            std::string query1 = "SELECT * FROM " + table + " WHERE 범죄중분류 = '" + crime + "';";
+            sql::ResultSet *res1 = mDB.executeQuery(query1);
+            while (res1->next())
+            {
+                max = res1->getInt(3); 
+                min = res1->getInt(3);
+                maxI = 3;
+                minI = 3;
+                for (int i = 4; i < count; i++)
+                {
+                    maxI = (max < res1->getInt(i)) ? i : maxI;
+                    max = (max < res1->getInt(i)) ? res1->getInt(i) : max;
+                    minI = (min > res1->getInt(i)) ? i : minI;
+                    min = (min > res1->getInt(i)) ? res1->getInt(i) : min;
+                }
+                cout << "----------------------" << endl;
+                cout << "분류) " << table << endl;
+                cout << "최대) " << list[maxI-3] << " : " << max << endl;
+                cout << "최소) " << list[minI-3] << " : " << min << endl;
+            }
+        }
+        catch(sql::SQLException& e)
+        {
+            std::cerr << "입력에러: " << e.what() << endl;
+        }
+    }
+};
+
+class Handler
+{
+private:
+    DB mDB;
+public:
+    void login(string id, string pw)
+    {
+        mDB.setting(id, pw);
+        mDB.connect();
+    }
+    void Region_MaxMin()
+    {
+        CalCulate rr(mDB);
+        string region;
+        string table = "CRIME_REGION";
+        string list = "서울";
+        string title = "지역별 범죄 통계: ";
+        rr.showColumn(table);
+        cout << "지역을 입력하시오: ";
+        cin >> region;
+        rr.max(region, table, list);
+        rr.min(region, table, list);
+        rr.avg(region, table);
+        rr.addHistory(title, region, table, list);
+        cout << endl;
+    }
+    void Place_MaxMin()
+    {
+        CalCulate rr(mDB);
+        string place;
+        string table = "CRIME_PLACE";
+        string list = "연립다세대";
+        string title = "장소별 범죄 통계: ";
+        rr.showColumn(table);
+        cout << "장소를 입력하시오: ";
+        cin >> place;
+        rr.max(place, table, list);
+        rr.min(place, table, list);
+        rr.avg(place, table);
+        rr.addHistory(title, place, table, list);
+        cout << endl;
+    }
+    void TimeWeek_MaxMin()
+    {
+        CalCulate rr(mDB);
+        string TimeWeek;
+        string table = "CRIME_TIME_WEEK";
+        string list = "TIME_03";
+        string title = "시간별 범죄 통계: ";
+        rr.showColumn(table);
+        cout << "시간 or 요일 입력하시오: ";
+        cin >> TimeWeek;
+        rr.max(TimeWeek, table, list);
+        rr.min(TimeWeek, table, list);
+        rr.avg(TimeWeek, table);
+        rr.addHistory(title, TimeWeek, table, list);
+        cout << endl;
+    }
+    void AgeGender_MaxMin()
+    {
+        CalCulate rr(mDB);
+        string AgeGender;
+        string table = "CRIME_AGE_SEX";
+        string list = "남자20세이하";
+        string title = "성별별 범죄 통계: ";
+        rr.showColumn(table);
+        cout << "찾고자 하는 대상의 범위를 입력하시오: ";
+        cin >> AgeGender;
+        rr.max(AgeGender, table, list);
+        rr.min(AgeGender, table, list);
+        rr.avg(AgeGender, table);
+        rr.addHistory(title, AgeGender, table, list);
+        cout << endl;
+    }
+    void ShowCrime()
+    {
+        Crime rr(mDB);
+        string choice;
+        rr.showColumn();
+        cout << "입력: ";
+        cin >> choice;
+        rr.showMaxMin(choice, "CRIME_REGION", 22);
+        rr.showMaxMin(choice, "CRIME_PLACE", 36);
+        rr.showMaxMin(choice, "CRIME_TIME_WEEK", 19);
+        rr.showMaxMin(choice, "CRIME_AGE_SEX", 15);
+        cout << "----------------------\n\n";
+    }
+    void Research()
+    {
+        CalCulate rr(mDB);
+        rr.showHistory();
+        rr.searchHistory();
+    }
+};
+
+int main(void)
+{
+    int choice;
+    Handler user;
+    string id = "OPERATOR";
+    string pw = "1234";
+    user.login(id, pw);
+    while(1)
+    {
+        cout << "1) 지역별 범죄통계\n2) 장소별 범죄 통계\n3) 시간별 범죄 통계\n";
+        cout << "4) 성별별 범죄 통계\n5) 특정 범죄의 통계 조회\n6) 검색 내역 조회 및 재검색\n7) 종료\n";
+        cout << "입력: ";
+        cin >> choice;
+
+        switch(choice)
+        {
+            case 1:
+                user.Region_MaxMin();
+                break;
+            case 2:
+                user.Place_MaxMin();
+                break;
+            case 3:
+                user.TimeWeek_MaxMin();
+                break;
+            case 4:
+                user.AgeGender_MaxMin();
+                break;
+            case 5:
+                user.ShowCrime();
+                break;
+            case 6:
+                user.Research();
+                break;
+            case 7:
+                return 0;
+        }
+    }
+}
